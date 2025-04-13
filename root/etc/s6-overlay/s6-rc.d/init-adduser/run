@@ -1,0 +1,75 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+PUID=${PUID:-911}
+PGID=${PGID:-911}
+NUSER=${USER_NAME:-sshadmin};
+echo " current user is ${NUSER}"
+if [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]] && [[ -z ${USER_NAME+x} ]]; then
+    groupmod -o -g "$PGID" sshadmin
+    usermod -o -u "$PUID" sshadmin
+else
+    echo "Create new user"
+    useradd \
+        -u ${PUID} -U \
+        -d /home/$NUSER \
+        -s /bin/bash $NUSER && \
+        echo "$NUSER:$USER_PASSWORD" | chpasswd && \
+        usermod -G users $NUSER && \
+        # usermod -aG sudo $NUSER && \
+        mkdir -p /home/$NUSER && \
+        chown -R ${PUID}:${PGID} /home/$NUSER
+    groupmod -o -g "$PGID" $NUSER
+    usermod -o -u "$PUID" $NUSER
+
+fi
+
+if { [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]]; } || [[ ! ${LSIO_FIRST_PARTY} = "true" ]]; then
+    cat /etc/s6-overlay/s6-rc.d/init-adduser/branding
+else
+    cat /run/branding
+fi
+
+if [[ -f /donate.txt ]]; then
+    echo '
+To support the app dev(s) visit:'
+    cat /donate.txt
+fi
+echo '
+To support LSIO projects visit:
+https://www.linuxserver.io/donate/
+
+───────────────────────────────────────
+GID/UID
+───────────────────────────────────────'
+if [[ -z ${LSIO_NON_ROOT_USER} ]]; then
+echo "LSIO_NON_ROOT_USER"
+echo "
+User UID:    $(id -u ${NUSER})
+User GID:    $(id -g ${NUSER})
+USER    :    $(id -nu ${PUID})
+GROUP   :    $(id -ng ${PGID})
+───────────────────────────────────────"
+else
+echo "
+User UID:    $(stat /run -c %u)
+User GID:    $(stat /run -c %g)
+───────────────────────────────────────"
+fi
+if [[ -f /build_version ]]; then
+    cat /build_version
+    echo '
+───────────────────────────────────────
+    '
+fi
+
+if [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]] && [[ -z ${USER_NAME+x} ]]; then
+# if [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]]; then
+    lsiown sshadmin:sshadmin /app
+    lsiown sshadmin:sshadmin /config
+    lsiown sshadmin:sshadmin /defaults
+else
+    chown -R ${PUID}:${PGID} /app    
+    lsiown ${PUID}:${PGID} /config
+    lsiown ${PUID}:${PGID} /defaults
+fi

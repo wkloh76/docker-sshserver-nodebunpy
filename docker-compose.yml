@@ -1,0 +1,41 @@
+#
+# volumes:
+#   home_data:
+
+services:
+  sshnodebunpy-build:
+    image: "${IMG}:${TAG}-${ARG1}"
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        NODE_VERSION: "${TAG}"
+        BUN_VERSION: "${ARG1}"
+  ssh_nodebunpy_deploy:
+    image: "${IMG}:${TAG}-${ARG1}"
+    container_name: ssh_nodebunpy_deploy
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kuala_Lumpur
+      - SUDO_ACCESS=true #optional
+      - PASSWORD_ACCESS=true #optional
+      - USER_PASSWORD=test1234 #optional and can change
+      - USER_NAME=test #optional and can change
+      - LOG_STDOUT= #optional
+    # volumes:
+    #   - home_data:/home ### Cannot apply in synology
+    #   - /test/share:/opt/share
+    #   - /test/data:/data
+    #   - /test/nodepath:/nodepath
+    working_dir: /opt/share
+    ports:
+      - 9700:2222
+      - 9720-9721:3000-3001
+    shm_size: "2gb"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          # cpus: "2.0"
+          memory: 2000M
