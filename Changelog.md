@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Summary
 
-- Design docker images for code develepment environment with `NodeJS` , `BunJS` and `Python3` language in ssh server.
+- Design docker images with rootless for code develepment environment with `NodeJS` , `BunJS` and `Python3` language in ssh server.
 
 ### Added
 
