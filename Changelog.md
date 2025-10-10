@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Upgrade bun.js version to 1.2.23 and nodejs version 24.9.0. Completed on 2025-10-03
+- Create default folders `/opt/share /{nodepath,data,build}` for development purpose. Completed on 2025-10-10
 
 ### Changed
 
