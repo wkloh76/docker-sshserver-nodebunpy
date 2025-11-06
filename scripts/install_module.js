@@ -104,7 +104,7 @@ const searchFiles = async (dir, targetName) => {
             };
         }
         await writeFile(`${build}/package.json`, JSON.stringify(package));
-        await $`${{ raw: "bun install --no-save --no-lockfile" }}`.cwd(build);
+        await $`${{ raw: "bun install --linker hoisted --no-save --no-lockfile" }}`.cwd(build);
         if (whoami != "")
           await $`${{ raw: `mkdir -p /nodepath${whoami}/${basename(dir)}` }}`;
         if (await exists(`/nodepath${whoami}/${basename(dir)}/node_modules`))
