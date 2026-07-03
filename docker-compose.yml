@@ -11,6 +11,7 @@ services:
       args:
         NODE_VERSION: "${TAG}"
         BUN_VERSION: "${ARG1}"
+        KIMICODE_VERSION: "${ARG2}"
   ssh_nodebunpy_deploy:
     image: "${IMG}:${TAG}-${ARG1}"
     container_name: ssh_nodebunpy_deploy

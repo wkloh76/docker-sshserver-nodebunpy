@@ -267,6 +267,14 @@ RUN apt-get update -qq \
   && which bun \
   && bun --version
   
+# Kimi-code cli installation
+ARG KIMICODE_VERSION
+ENV KIMI_INSTALL_DIR /usr/local
+RUN curl -fsSL https://code.kimi.com/kimi-code/install.sh | KIMI_VERSION=$KIMICODE_VERSION bash \
+  && chmod a+x /usr/local/bin/kimi \
+  && which kimi \
+  && kimi --version
+
 COPY scripts/ /scripts
 
 RUN \

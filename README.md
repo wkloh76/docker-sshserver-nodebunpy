@@ -1,51 +1,106 @@
 # Docker Deploy NodeBunPy
 
-![Static Badge](https://img.shields.io/badge/License-Mulan_PSL_v2-_)
-![Static Badge](https://img.shields.io/badge/NodeJS-V24_.9_.0-_)
-![Static Badge](https://img.shields.io/badge/BunJS-V1_.2_.23-_)
-![Static Badge](https://img.shields.io/badge/ElectronJS-V38_.2_.0-_)
+![Static Badge](https://img.shields.io/badge/License-Mulan_PSL_v2-)
+![Static Badge](https://img.shields.io/badge/NodeJS-V24.18.0-)
+![Static Badge](https://img.shields.io/badge/BunJS-V1.3.14-)
+![Static Badge](https://img.shields.io/badge/ElectronJS-V342.4.1-)
 ![Static Badge](https://img.shields.io/badge/Python3-Latest-__?style=flat)
 ![Static Badge](https://img.shields.io/badge/OS-Ubuntu_24-_?style=flat)
 
-## Objectvie
+## Objective
 
-- Design docker images for code develepment with `NodeJS` , `BunJS` and `Python3` language in ssh server. The advantanges is always make your host machine environment clean.
+Design Docker images for code development with `NodeJS`, `BunJS`, and `Python3` on an SSH server. The main advantage is keeping your host machine environment clean.
 
-- The docker-compose files combine both build and up containers feature in one files.
+The Docker Compose files combine both build and up container features in one file.
 
-## Environment setup
+## Quick Start
 
-### Docker deamon setup
+1. Copy `.env.example` → `.env`
+2. Run `docker compose build`
+3. Run `docker compose up -d`
+4. Connect via `ssh test@localhost -p 9700` (password: `test1234`)
 
-- Create daemon file `/etc/docker/daemon.json` and content show as below
+## Kimi Code CLI
+
+### What is Kimi Code CLI
+
+Kimi Code CLI is an AI-powered developer assistant that runs inside your terminal. It understands your codebase, can edit files, run commands, manage Docker builds, and help with development tasks — all through natural language.
+
+### How to use in this project
+
+1. **Launch**: Open a terminal in the project root and run `kimi`
+2. **Connect**: SSH into the container at `test@localhost:9700`
+3. **Develop**: Use Kimi Code CLI to edit code, run scripts, manage dependencies — it works directly inside the container via the SSH connection
+
+### Useful commands
+
+| Task | Command |
+|------|---------|
+| Build image | `docker compose build` |
+| Start container | `docker compose up -d` |
+| Stop container | `docker compose down` |
+| View logs | `docker compose logs -f ssh_nodebunpy_deploy` |
+| SSH in | `ssh test@localhost -p 9700` |
+
+### Manually add provider and model
+
+Edit `~/.kimi-code/config.toml` to add providers and models:
+
+**Add a provider** (e.g. OpenAI-compatible API):
+```toml
+[providers.my_provider]
+type = "openai"
+base_url = "https://api.example.com/v1"
+api_key = "sk-your-key"
+```
+
+**Register a model** under that provider:
+```toml
+[models."my-model-name"]
+provider = "my_provider"
+model = "model-name-on-server"
+max_context_size = 131072
+```
+
+**Set as default**:
+```toml
+default_model = "my-model-name"
+```
+
+Supported provider types: `openai`, `anthropic`, `google`, `azure`, and any LiteLLM-compatible endpoint.
+
+## Environment Setup
+
+### Docker daemon setup
+
+- Create daemon file `/etc/docker/daemon.json` with the following content:
   ```
   {"insecure-registries":["xxx.xxx.xxx.xxx:port"]}
   ```
-- Stop and start docker service from systemctl.
-
+- Stop and start Docker service via systemctl:
   ```
   sudo systemctl stop docker.socket && sudo systemctl stop docker.service
-
   sudo systemctl start docker.socket && sudo systemctl start docker.service
   ```
 
 ### Git
 
-- git config user.name "My Name"
+```
+git config user.name "My Name"
+git config user.email "myemail@example.com"
+```
 
-- git config user.email "myemail@example.com"
+### FIGlet
 
-### figlet
+FIGlet is a utility for creating large characters out of ordinary screen characters. It's often used in terminal sessions to create eye-catching text, banners, or headers.
 
-- FIGlet is a utility for creating large characters out of ordinary screen characters. It's often used in terminal sessions to create eye-catching text, banners, or headers.
+```
+figlet -w 60  'ALPINE BUNJS' >> ./BANNER
+```
 
-  ```
-  Figlet -w 60  'ALPINE BUNJS' >> ./BANNER
-  ```
+## Notes
 
-## Take Noted
-
-- Docker build image depend on `.env` file. So, copy and paste `.env.example` and rename it to `.env`. Ater that run command `docker compose build` in the terminal with same project.
+- Docker build depends on the `.env` file. Copy `.env.example` and rename it to `.env`, then run `docker compose build` in the project directory:
   ```
   sshnodebunpy-build:
     image: "${IMG}:${TAG}-${ARG1}"
@@ -56,8 +111,8 @@
         NODE_VERSION: "${TAG}"
         BUN_VERSION: "${ARG1}"
   ```
-- Run command `docker compose up -d` will establish ssh server container.Then you can use visual studio code which already active the remote ssh extension and establish connection with user `test@localhost` with port `9700`. The paswword is `test1234`
 
+- Run `docker compose up -d` to start the SSH server container. Then use Visual Studio Code with the Remote SSH extension to connect as `test@localhost` on port `9700`. The password is `test1234`:
   ```
   ssh_nodebunpy_deploy:
     image: "${IMG}:${TAG}-${ARG1}"
@@ -66,13 +121,13 @@
       - PUID=1000
       - PGID=1000
       - TZ=Asia/Kuala_Lumpur
-      - SUDO_ACCESS=true #optional
-      - PASSWORD_ACCESS=true #optional
-      - USER_PASSWORD=test1234 #optional  and can change
-      - USER_NAME=test #optional and can change
-      - LOG_STDOUT= #optional
+      - SUDO_ACCESS=true # optional
+      - PASSWORD_ACCESS=true # optional
+      - USER_PASSWORD=test1234 # optional and can change
+      - USER_NAME=test # optional and can change
+      - LOG_STDOUT= # optional
     # volumes:
-    #   - home_data:/home ### Cannot apply in synology
+    #   - home_data:/home ### Cannot apply in Synology
     #   - /test/share:/opt/share
     #   - /test/data:/data
     #   - /test/nodepath:/nodepath
@@ -89,20 +144,18 @@
           memory: 2000M
   ```
 
-- When the connection is established, vscode will set up the vscode server as a container on first access.
-- Your source code folder can be mapped to the container volume "/opt/share" and the container will access it directly as if it were inside.
+- On first access, VS Code will set up the VS Code Server as a container.
+- Your source code folder can be mapped to the container volume `/opt/share`, and the container will access it directly as if it were inside.
 
-# Reference
+## Reference
 
-- Change the password without prompt message box
-
+- Change password without prompt message box:
   ```
-  echo <user>:<password>> | sudo chpasswd
+  echo <user>:<password> | sudo chpasswd
   ```
 
 - [baseimage noble-cea744e8-ls30](https://github.com/linuxserver/docker-baseimage-ubuntu/releases/tag/noble-cea744e8-ls30)
 
 - [How to Set a Custom SSH Warning Banner and MOTD in Linux](https://www.tecmint.com/ssh-warning-banner-linux/)
 - [Crafting Striking Terminal Text with FIGlet](https://labex.io/tutorials/linux-crafting-striking-terminal-text-with-figlet-272383)
-
-- [how to check if a variable is set in bash](https://stackoverflow.com/questions/3601515/how-to-check-if-a-variable-is-set-in-bash)
+- [How to check if a variable is set in bash](https://stackoverflow.com/questions/3601515/how-to-check-if-a-variable-is-set-in-bash)
