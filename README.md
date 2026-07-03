@@ -1,11 +1,11 @@
 # Docker Deploy NodeBunPy
 
-![Static Badge](https://img.shields.io/badge/License-Mulan_PSL_v2-)
-![Static Badge](https://img.shields.io/badge/NodeJS-V24.18.0-)
-![Static Badge](https://img.shields.io/badge/BunJS-V1.3.14-)
-![Static Badge](https://img.shields.io/badge/ElectronJS-V342.4.1-)
+![Static Badge](https://img.shields.io/badge/License-Mulan_PSL_v2-_)
+![Static Badge](https://img.shields.io/badge/NodeJS-V24_.18_.0-_)
+![Static Badge](https://img.shields.io/badge/BunJS-V1_.3_.14-_)
+![Static Badge](https://img.shields.io/badge/ElectronJS-V42_.4_.1-_)
 ![Static Badge](https://img.shields.io/badge/Python3-Latest-__?style=flat)
-![Static Badge](https://img.shields.io/badge/OS-Ubuntu_24-_?style=flat)
+![Static Badge](https://img.shields.io/badge/OS-Ubunut_24.04-_?style=flat)
 
 ## Objective
 

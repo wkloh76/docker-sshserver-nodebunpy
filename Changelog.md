@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Upgrade bun.js version to 1.2.23 and nodejs version 24.9.0. Completed on 2025-10-03
+- ~~Upgrade bun.js version to 1.2.23 and nodejs version 24.9.0. Completed on 2025-10-03~~
 - Create default folders `/opt/share /{nodepath,data,build}` for development purpose. Completed on 2025-10-10
-- Upgrade bun.js version to 1.3.31 and nodejs version 24.11.0. Completed on 2025-11-05
+- ~~Upgrade bun.js version to 1.3.1 and nodejs version 24.11.0. Completed on 2025-11-05~~
+- Upgrade bun.js version to 1.3.14 and nodejs version 24.18.0. Completed on 2026-07-03
+- Implement kimi-code cli 0.22.1 to the environment. Completed on 2026-07-03
 
 ### Changed
 
