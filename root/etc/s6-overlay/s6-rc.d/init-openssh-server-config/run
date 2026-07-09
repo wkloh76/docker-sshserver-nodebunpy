@@ -150,3 +150,7 @@ fi
 chown -R ${PUID}:${PGID} /home/${NUSER}
 # chmod 775 /home/$NUSER
 usermod --shell /bin/bash ${NUSER}
+
+# Allow kimi-code auto-upgrade to write to /usr/local/bin
+chown root:${PGID} /usr/local/bin
+chmod 775 /usr/local/bin

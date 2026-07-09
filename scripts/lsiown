@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Drop-in replacement for linuxserver's lsiown
+# Fixes file ownership for s6-overlay non-root user access
+# Usage: lsiown [-R] <user:group> <path> [paths...]
+
+set -euo pipefail
+
+recursive=false
+target=""
+paths=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -R) recursive=true; shift ;;
+        *)
+            if [[ -z "$target" ]]; then
+                target="$1"
+            else
+                paths+=("$1")
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$target" ]]; then
+    echo "Usage: lsiown [-R] <user:group> <path> [paths...]" >&2
+    exit 1
+fi
+
+paths=("$target" "${paths[@]}")
+
+for p in "${paths[@]}"; do
+    if [[ ! -e "$p" ]]; then
+        echo "lsiown: '$p' does not exist, skipping" >&2
+        continue
+    fi
+    if [[ "$recursive" == true ]]; then
+        chown -R "$target" "$p"
+    else
+        chown "$target" "$p"
+    fi
+done
