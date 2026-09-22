@@ -19,6 +19,17 @@ else
         # usermod -aG sudo $NUSER && \
         mkdir -p /home/$NUSER /opt/share /{nodepath,data,build} && \
         chown -R ${PUID}:${PGID} /home/$NUSER /opt/share /{nodepath,data,build}
+
+    # Generate conf.toml with encrypted sudo password in user home directory
+    if [[ -n ${USER_PASSWORD} ]]; then
+        echo "Generating conf.toml with encrypted password..."
+        export NUSER
+        HOME=/home/$NUSER genconf --output=/home/$NUSER/conf.toml
+        chown ${PUID}:${PGID} /home/$NUSER/conf.toml
+        chmod 600 /home/$NUSER/conf.toml
+        rm -f /usr/local/bin/genconf
+        echo "genconf removed after use."
+    fi
     groupmod -o -g "$PGID" $NUSER
     usermod -o -u "$PUID" $NUSER
 

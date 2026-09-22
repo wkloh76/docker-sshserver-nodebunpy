@@ -282,7 +282,8 @@ RUN \
   sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config && \
   usermod --shell /bin/bash sshadmin && \
   bun build /scripts/install_module.js --compile --outfile /usr/local/bin/helper && \
-  chmod +x /usr/local/bin/helper && \
+  bun build /scripts/genconf.js --compile --outfile /usr/local/bin/genconf && \
+  chmod +x /usr/local/bin/helper /usr/local/bin/genconf && \
   rm -rf \
     /tmp/* \
     $HOME/.cache \

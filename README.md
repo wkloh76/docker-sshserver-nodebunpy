@@ -100,6 +100,7 @@ docker buildx build \
 | Logs | `docker compose logs -f ssh_nodebunpy_deploy` |
 | SSH in | `ssh test@localhost -p 9700` |
 | Helper help | `helper --help` |
+| Encrypted password | `cat ~/conf.toml` (auto-generated on first boot) |
 
 ## Helper (`install_module.js`)
 
