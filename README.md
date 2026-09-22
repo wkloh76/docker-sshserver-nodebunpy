@@ -1,161 +1,266 @@
 # Docker Deploy NodeBunPy
 
 ![Static Badge](https://img.shields.io/badge/License-Mulan_PSL_v2-_)
-![Static Badge](https://img.shields.io/badge/NodeJS-V24_.18_.0-_)
-![Static Badge](https://img.shields.io/badge/BunJS-V1_.3_.14-_)
-![Static Badge](https://img.shields.io/badge/ElectronJS-V42_.4_.1-_)
+![Static Badge](https://img.shields.io/badge/NodeJS-V24.21.0-_)
+![Static Badge](https://img.shields.io/badge/BunJS-V1.4.2-_)
 ![Static Badge](https://img.shields.io/badge/Python3-Latest-__?style=flat)
-![Static Badge](https://img.shields.io/badge/OS-Ubunut_24.04-_?style=flat)
+![Static Badge](https://img.shields.io/badge/OS-Ubuntu_24.04-_?style=flat)
 
 ## Objective
 
 Design Docker images for code development with `NodeJS`, `BunJS`, and `Python3` on an SSH server. The main advantage is keeping your host machine environment clean.
 
-The Docker Compose files combine both build and up container features in one file.
+## Architecture Map
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│                    Host Machine (x64)                                  │
+│                                                                        │
+│  /opt/share/                   ← Shared development tree               │
+│  ├── prj/                     ← Project skeletons (working projects)   │
+│  │   └── web_oqc/             ← Full project with engine, atomic, ...  │
+│  ├── framework/               ← Shared framework                       │
+│  │   └── oricommjs_v2/       ← Framework code                         │
+│  ├── atomic/                  ← Shared atomic modules                  │
+│  │   ├── atom/                                                │
+│  │   ├── molecule/                                            │
+│  │   ├── organism/                                            │
+│  │   ├── template/                                            │
+│  │   └── page/                                                │
+│  └── components/              ← Shared components / project repos    │
+│                                                                        │
+│  docker-compose.yml                                                    │
+│  ├── ssh_nodebunpy_deploy  ← SSH server + Kimi Code CLI               │
+│  └── helper            ← Compiled from install_module.js               │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Project Tree
+
+```
+docker-sshserver-nodebunpy/
+├── Dockerfile              ← x64 build (amd64)
+├── Dockerfile.aarch64      ← ARM64 build (arm64)
+├── docker-compose.yml      ← Container orchestration
+├── .env                    ← Version variables
+│   ├── IMG=vsrnd.synology.me:3000/docker_images/noble-nodebunpy-sshserver
+│   ├── TAG=24.21.0          ← Node.js version
+│   ├── ARG1=1.4.2           ← Bun.js version
+│   └── ARG2=2.0.2           ← Kimi Code CLI version
+├── sources.list            ← apt sources (x64)
+├── sources.list.arm        ← apt sources (arm64)
+├── scripts/
+│   ├── install_module.js   ← Helper script source
+│   └── lsiown              ← Permission fixer
+├── root/                   ← Container root files
+└── README.md
+```
 
 ## Quick Start
 
-1. Copy `.env.example` → `.env`
-2. Run `docker compose build`
-3. Run `docker compose up -d`
-4. Connect via `ssh test@localhost -p 9700` (password: `test1234`)
+### 1. Build & Run
 
-## Kimi Code CLI
+```bash
+# Copy env
+cp .env.example .env          # Edit versions if needed
 
-### What is Kimi Code CLI
+# Build image
+./build.sh                    # Uses .env versions automatically
 
-Kimi Code CLI is an AI-powered developer assistant that runs inside your terminal. It understands your codebase, can edit files, run commands, manage Docker builds, and help with development tasks — all through natural language.
+# Start container
+docker compose up -d ssh_nodebunpy_deploy
 
-### How to use in this project
+# Connect
+ssh test@localhost -p 9700    # password: test1234
+```
 
-1. **Launch**: Open a terminal in the project root and run `kimi`
-2. **Connect**: SSH into the container at `test@localhost:9700`
-3. **Develop**: Use Kimi Code CLI to edit code, run scripts, manage dependencies — it works directly inside the container via the SSH connection
+### 2. Build without docker-compose
 
-### Useful commands
+```bash
+# Simple build using .env versions
+./build.sh
+
+# Or manually
+docker buildx build \
+  --build-arg NODE_VERSION=$(grep TAG .env | cut -d= -f2) \
+  --build-arg BUN_VERSION=$(grep ARG1 .env | cut -d= -f2) \
+  --build-arg KIMICODE_VERSION=$(grep ARG2 .env | cut -d= -f2) \
+  -t vsrnd.synology.me:3000/docker_images/noble-nodebunpy-sshserver:$(grep TAG .env | cut -d= -f2)-$(grep ARG1 .env | cut -d= -f2) \
+  -f Dockerfile.aarch64 \
+  --load .
+```
+
+### 3. Useful Commands
 
 | Task | Command |
 |------|---------|
-| Build image | `docker compose build` |
-| Start container | `docker compose up -d` |
-| Stop container | `docker compose down` |
-| View logs | `docker compose logs -f ssh_nodebunpy_deploy` |
+| Build | `./build.sh` |
+| Start | `docker compose up -d ssh_nodebunpy_deploy` |
+| Stop | `docker compose down` |
+| Logs | `docker compose logs -f ssh_nodebunpy_deploy` |
 | SSH in | `ssh test@localhost -p 9700` |
+| Helper help | `helper --help` |
 
-### Manually add provider and model
+## Helper (`install_module.js`)
 
-Edit `~/.kimi-code/config.toml` to add providers and models:
+Compiled into `/usr/local/bin/helper` inside the container. Four operation modes:
 
-**Add a provider** (e.g. OpenAI-compatible API):
-```toml
-[providers.my_provider]
-type = "openai"
-base_url = "https://api.example.com/v1"
-api_key = "sk-your-key"
+### `kill` — Free a port
+
+```bash
+helper --proc=kill --port=3000
 ```
 
-**Register a model** under that provider:
-```toml
-[models."my-model-name"]
-provider = "my_provider"
-model = "model-name-on-server"
-max_context_size = 131072
+### `install` — Re-install dependencies
+
+Use when `package.json` has changed (new dependencies added):
+
+```bash
+helper --proc=install --dir=/opt/share/prj/myapp
 ```
 
-**Set as default**:
-```toml
-default_model = "my-model-name"
+> **Note:** `devsetup` already auto-runs `install` at the end. Only use `install` manually when you've edited `package.json` and need to refresh `node_modules`.
+
+### `devsetup` — Interactive development tree setup (Q&A)
+
+Sets up the full development tree with framework, atomic modules, and optional components:
+
+```bash
+# Basic setup (interactive Q&A)
+helper --proc=devsetup --project=myapp --credentials=user:pass
+
+# With component mode — new skeleton
+helper --proc=devsetup --project=myapp --comp=newcomp --credentials=user:pass
+
+# With component mode — existing repo
+helper --proc=devsetup --project=myapp --comp=oqc --engine=webbunjs --credentials=user:pass
 ```
 
-Supported provider types: `openai`, `anthropic`, `google`, `azure`, and any LiteLLM-compatible endpoint.
+**Flow:**
+1. **Credentials** — `user:pass` or `--credentials` flag (validated before proceeding)
+2. **Project name** — from `--project` flag
+3. **Framework** — hardcoded to `oricommjs_v2` (no prompt)
+4. **Engine type** — defaults to `webnodehonojs` (no prompt, override with `--engine`)
+5. **Component** (optional) — `--comp=<name>` flag
 
-## Environment Setup
+**Component modes (`--comp`):**
 
-### Docker daemon setup
+| Mode | Behavior |
+|------|----------|
+| **New skeleton** | Downloads latest from `skelethon/temp-component` repo via `git archive`, replaces `package.json` placeholders (`name`, `version="unreleased"`, all `atomic.*={}`) |
+| **Existing repo** | Clones from `components/<name>.git`, reads `package.json.atomic` (atom, molecule, organism, template, page), auto-clones each module from its respective Gitea repo, merges all dependencies |
 
-- Create daemon file `/etc/docker/daemon.json` with the following content:
-  ```
-  {"insecure-registries":["xxx.xxx.xxx.xxx:port"]}
-  ```
-- Stop and start Docker service via systemctl:
-  ```
-  sudo systemctl stop docker.socket && sudo systemctl stop docker.service
-  sudo systemctl start docker.socket && sudo systemctl start docker.service
-  ```
+**Atomic types and Gitea repos:**
 
-### Git
+| Type | Gitea Repo Path |
+|------|----------------|
+| `atom` | `2rd_system_atom/<name>.git` |
+| `molecule` | `molecule/<name>.git` |
+| `organism` | `organism/<name>.git` |
+| `template` | `template/<name>.git` |
+| `page` | `page/<name>.git` |
+
+**What it creates:**
 
 ```
-git config user.name "My Name"
-git config user.email "myemail@example.com"
+/opt/share/
+├── prj/myapp/                   ← Project skeleton (full working project)
+│   ├── app.js                   ← Entry point
+│   ├── engine/                  ← compmgr, workflow, sqlmanager, <selected-engine>
+│   ├── atomic/                  ← atom, molecule, organism, template, page
+│   │   ├── atom/                ← symlinks → /opt/share/atomic/atom/<name>/
+│   │   ├── molecule/            ← symlinks → /opt/share/atomic/molecule/<name>/
+│   │   └── ...                  ← (only for declared modules)
+│   ├── utils/                   ← Shared utilities
+│   ├── components/              ← Component symlinks
+│   │   └── oqc → /opt/share/components/oqc/
+│   ├── package.json             ← Merged dependencies
+│   └── coresetting.toml         ← Project config
+├── framework/oricommjs_v2/      ← Shared framework
+├── atomic/{atom,molecule,...}/  ← Shared atomic modules
+└── components/oqc/              ← Component repo (cloned or skeleton)
 ```
 
-### FIGlet
+**Auto-installs dependencies after setup:**
 
-FIGlet is a utility for creating large characters out of ordinary screen characters. It's often used in terminal sessions to create eye-catching text, banners, or headers.
+```bash
+# No manual install needed — devsetup runs helper --proc=install automatically
+```
+
+## Development Workflow
+
+### Basic project setup
+```
+1. helper --proc=devsetup --project=myapp --credentials=user:pass
+   ↓ (auto-installs dependencies)
+2. Developer works in /opt/share/prj/myapp/
+   ↓
+3. helper --proc=install --dir=/opt/share/prj/myapp
+   (re-run when package.json changes)
+```
+
+### With component setup
+```
+1. helper --proc=devsetup --project=myapp --comp=oqc --credentials=user:pass
+   ↓ (auto-installs dependencies)
+2. Developer works in /opt/share/prj/myapp/ and /opt/share/components/oqc/
+   ↓
+3. helper --proc=install --dir=/opt/share/prj/myapp
+   (re-run when package.json changes)
+```
+
+## Container Structure
 
 ```
-figlet -w 60  'ALPINE BUNJS' >> ./BANNER
+Container (Ubuntu 24.04 + s6-overlay):
+├── Node.js v24.21.0
+├── Bun.js v1.4.2
+├── Kimi Code CLI v2.0.2
+├── Python3 + pip + venv
+├── OpenSSH Server (port 2222)
+├── helper              ← Compiled install_module.js
+├── /opt/share          ← Working directory (mapped from host)
+├── /config             ← SSH config
+├── /app                ← Application directory
+└── /nodepath           ← Shared node_modules
 ```
+
+## Engine Types
+
+| Engine | Port | Use Case |
+|--------|------|----------|
+| webbunjs | 3000 | Web app with Bun |
+| webnodehonojs | 3001 | Web app with Node.js + Hono |
+| appservicejs | 3002 | Backend API service |
+| deskelectronjs | — | Desktop Electron app |
+
+## Mandatory Framework Modules
+
+Always included with every project:
+- **compmgr** — Component manager
+- **workflow** — Workflow engine
+- **sqlmanager** — Database manager (mariadb, bcrypt, etc.)
+
+## Version Variables (`.env`)
+
+| Variable | Meaning | Default |
+|----------|---------|---------|
+| `TAG` | Node.js version | 24.21.0 |
+| `ARG1` | Bun.js version | 1.4.2 |
+| `ARG2` | Kimi Code CLI version | 2.0.2 |
+| `IMG` | Image registry | vsrnd.synology.me:3000/docker_images/noble-nodebunpy-sshserver |
 
 ## Notes
 
-- Docker build depends on the `.env` file. Copy `.env.example` and rename it to `.env`, then run `docker compose build` in the project directory:
-  ```
-  sshnodebunpy-build:
-    image: "${IMG}:${TAG}-${ARG1}"
-    build:
-      context: .
-      dockerfile: ./Dockerfile
-      args:
-        NODE_VERSION: "${TAG}"
-        BUN_VERSION: "${ARG1}"
-  ```
-
-- Run `docker compose up -d` to start the SSH server container. Then use Visual Studio Code with the Remote SSH extension to connect as `test@localhost` on port `9700`. The password is `test1234`:
-  ```
-  ssh_nodebunpy_deploy:
-    image: "${IMG}:${TAG}-${ARG1}"
-    container_name: ssh_nodebunpy_deploy
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Asia/Kuala_Lumpur
-      - SUDO_ACCESS=true # optional
-      - PASSWORD_ACCESS=true # optional
-      - USER_PASSWORD=test1234 # optional and can change
-      - USER_NAME=test # optional and can change
-      - LOG_STDOUT= # optional
-    # volumes:
-    #   - home_data:/home ### Cannot apply in Synology
-    #   - /test/share:/opt/share
-    #   - /test/data:/data
-    #   - /test/nodepath:/nodepath
-    working_dir: /opt/share
-    ports:
-      - 9700:2222
-      - 9720-9721:3000-3001
-    shm_size: "2gb"
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          # cpus: "2.0"
-          memory: 2000M
-  ```
-
-- On first access, VS Code will set up the VS Code Server as a container.
-- Your source code folder can be mapped to the container volume `/opt/share`, and the container will access it directly as if it were inside.
+- **Docker daemon**: Configure insecure registry in `/etc/docker/daemon.json`
+- **Volumes**: `/opt/share` maps host source code into container
+- **Cross-platform**: `Dockerfile` for x64, `Dockerfile.aarch64` for ARM64
+- **First access**: VS Code sets up VS Code Server automatically via Remote SSH
 
 ## Reference
 
-- Change password without prompt message box:
-  ```
-  echo <user>:<password> | sudo chpasswd
-  ```
-
-- [baseimage noble-cea744e8-ls30](https://github.com/linuxserver/docker-baseimage-ubuntu/releases/tag/noble-cea744e8-ls30)
-
-- [How to Set a Custom SSH Warning Banner and MOTD in Linux](https://www.tecmint.com/ssh-warning-banner-linux/)
-- [Crafting Striking Terminal Text with FIGlet](https://labex.io/tutorials/linux-crafting-striking-terminal-text-with-figlet-272383)
-- [How to check if a variable is set in bash](https://stackoverflow.com/questions/3601515/how-to-check-if-a-variable-is-set-in-bash)
+- [baseimage noble](https://github.com/linuxserver/docker-baseimage-ubuntu/releases)
+- [s6-overlay](https://github.com/just-containers/s6-overlay)
+- [Node.js](https://nodejs.org/)
+- [Bun.js](https://bun.sh/)
+- [Kimi Code CLI](https://code.kimi.com/)

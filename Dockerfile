@@ -269,7 +269,7 @@ RUN apt-get update -qq \
   
 # Kimi-code cli installation
 ARG KIMICODE_VERSION
-ENV KIMI_INSTALL_DIR /usr/local
+ENV KIMI_INSTALL_DIR="/usr/local"
 RUN curl -fsSL https://code.kimi.com/kimi-code/install.sh | KIMI_VERSION=$KIMICODE_VERSION bash \
   && chmod a+x /usr/local/bin/kimi \
   && which kimi \
