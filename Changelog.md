@@ -13,12 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `devsetup` now supports all 5 atomic types (`atom`, `molecule`, `organism`, `template`, `page`) with per-type Gitea repo cloning and symlink resolution.
 - `genconf` now hard-codes encryption keys (`aes-256-cbc`, `secretKey`, `iv`) — no longer depends on `coresetting.toml` at container startup.
 - `conf.toml` written to user's home directory (`/home/<user>/conf.toml`) instead of `/root/conf.toml`, so the SSH user can read it.
+- Framework and component cloning now lists all tags/branches for user to select, then clones full repo and checks out selected tag.
+- All git clone operations use `cp -a` to preserve `.git` hidden directory.
 
 ### Added
 
 - `--comp=<name>` flag for `devsetup` — creates component skeleton from Gitea skeleton repo (`skelethon/temp-component`) or clones existing component repo from `components/<name>.git`
 - New component: downloads full skeleton with design documents from `skelethon/temp-component` via `git archive`, replaces `package.json` placeholders (`name`, `version`, `atomic.atom`)
-- Existing component: clones from Gitea, reads `package.json.atomic.atom`, auto-clones each atom module from `2rd_system_atom/<name>.git`, merges all dependencies
+- Existing component: clones from Gitea, reads `package.json.atomic` (atom, molecule, organism, template, page), auto-clones each module from its respective Gitea repo, merges all dependencies
 - Symlink: `prj/<project>/components/<comp>` → `/opt/share/components/<comp>` (absolute path)
 - Auto-install: `devsetup` now automatically runs `helper --proc=install` after setup
 - Credential validation: tests credentials before proceeding, prompts again on failure
@@ -31,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hard-coded encryption config in `genconf.js`: `algorithm=aes-256-cbc`, `secretKey`, `iv` — container can encrypt password on first boot without any project existing yet
 - `conf.toml` output path: defaults to `$HOME/conf.toml` (user home directory)
 - `init-adduser/run`: passes `--output=/home/$NUSER/conf.toml` and sets correct ownership (`chown ${PUID}:${PGID}` + `chmod 600`)
+- Framework tag selection: lists all tags via `git ls-remote --tags`, user selects tag or HEAD
+- Component tag selection: same tag listing and selection for `--comp` repos
+- Atomic module tag checkout: clones full repo then checks out specified tag version
 
 ### Changed
 
@@ -44,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `package` variable renamed to `pkg` (reserved word in strict mode)
 - `genconf.js`: removed all `coresetting.toml` scanning/parsing logic, removed unused `fs` imports (`existsSync`, `readdirSync`)
 - `init-adduser/run`: `genconf` runs with `HOME=/home/$NUSER` and explicit `--output` path
+- Git clone: uses `cp -a` instead of `mv *` to preserve `.git` hidden directory
+- Git clone: full repo clone + `git checkout tags/<tag>` instead of `--depth=1 --branch`
 
 ### Fixed
 
@@ -58,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `devsetup` file lost during build cycle — full rewrite with all features restored
 - `conf.toml` permission denied: was written to `/root/conf.toml` (root-owned), SSH user could not read it
 - `conf.toml` not found on restart: `genconf` was deleted after first run, no fallback
+- `try/catch` not catching Bun shell errors → use `exitCode` check
+- `.git` directory missing after clone → `mv *` skips hidden files, use `cp -a`
+- `ShellPromise.text` not returning string → use `typeof` check + `String()` conversion
+- `helper --help` showing `--proc undefined!` → check for `--help`/`-h` flags
+- `itemTmp` not defined in atomic clone loop — moved declaration before `if/else` branches
+- `coresetting.toml` dot prefix removed (was `.coresetting.toml`, now `coresetting.toml`)
 
 ## [1.0.1] - 2025-10-03
 

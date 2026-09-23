@@ -134,13 +134,13 @@ helper --proc=devsetup --project=myapp --credentials=user:pass
 helper --proc=devsetup --project=myapp --comp=newcomp --credentials=user:pass
 
 # With component mode — existing repo
-helper --proc=devsetup --project=myapp --comp=oqc --engine=webbunjs --credentials=user:pass
+helper --proc=devsetup --project=myapp --comp=oqc --engine=webnodehonojs --credentials=user:pass
 ```
 
 **Flow:**
 1. **Credentials** — `user:pass` or `--credentials` flag (validated before proceeding)
 2. **Project name** — from `--project` flag
-3. **Framework** — hardcoded to `oricommjs_v2` (no prompt)
+3. **Framework** — lists all tags, user selects version or HEAD (default: HEAD)
 4. **Engine type** — defaults to `webnodehonojs` (no prompt, override with `--engine`)
 5. **Component** (optional) — `--comp=<name>` flag
 
@@ -149,7 +149,7 @@ helper --proc=devsetup --project=myapp --comp=oqc --engine=webbunjs --credential
 | Mode | Behavior |
 |------|----------|
 | **New skeleton** | Downloads latest from `skelethon/temp-component` repo via `git archive`, replaces `package.json` placeholders (`name`, `version="unreleased"`, all `atomic.*={}`) |
-| **Existing repo** | Clones from `components/<name>.git`, reads `package.json.atomic` (atom, molecule, organism, template, page), auto-clones each module from its respective Gitea repo, merges all dependencies |
+| **Existing repo** | Lists all tags, user selects version or HEAD, clones full repo and checks out tag, reads `package.json.atomic` (atom, molecule, organism, template, page), auto-clones each module from its respective Gitea repo, merges all dependencies |
 
 **Atomic types and Gitea repos:**
 

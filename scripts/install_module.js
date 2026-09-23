@@ -67,7 +67,9 @@ Examples:
   helper --proc=devsetup --project=myapp --comp=oqc --engine=webnodehonojs --credentials=user:pass
 `;
 
-if (Bun.argv.length === 0) {
+// Check for help flag
+const helpFlags = Bun.argv.slice(2).some(a => a === "--help" || a === "-h");
+if (helpFlags || Bun.argv.length <= 2) {
   console.log(helpText);
   process.exit(0);
 }
@@ -98,8 +100,9 @@ const gitClone = async (repoPath, dest) => {
   await $`${{ raw: `GIT_TERMINAL_PROMPT=0 git clone --depth=1 "http://${gituser}:${gitpass}@${repoPath}" "${dest}"` }}`;
 };
 
-switch (proc) {
-case "devsetup":
+(async () => {
+  switch (proc) {
+  case "devsetup":
   const devRoot = "/opt/share";
   const devPrj = join(devRoot, "prj", argv.project);
   const devComponents = join(devRoot, "components");
@@ -122,7 +125,11 @@ case "devsetup":
   const testClone = join(build, "__test_clone");
   await $`rm -rf ${testClone}`;
   let validCreds = true;
-  try { await gitClone("vsrnd.synology.me:3000/2rd_system/oricommjs_v2.git", testClone); } catch (err) { validCreds = false; }
+  const testResult = await $`GIT_TERMINAL_PROMPT=0 git ls-remote "http://${argv.credentials}@vsrnd.synology.me:3000/2rd_system/oricommjs_v2.git" HEAD`;
+  const testText = typeof testResult.text === "function" ? await testResult.text() : testResult.text;
+  if (testResult.exitCode !== 0 || !String(testText).trim()) {
+    validCreds = false;
+  }
   await $`rm -rf ${testClone}`;
   if (!validCreds) {
     console.log("Credentials rejected by Gitea.");
@@ -141,7 +148,7 @@ case "devsetup":
   await mkdir(devAtomic, { recursive: true });
   await mkdir(devFramework, { recursive: true });
 
-  // Step 3: Framework (always oricommjs_v2)
+  // Step 3: Framework (always oricommjs_v2) — list tags for user to select
   const frameworkName = "oricommjs_v2";
   const frameworkRepo = FRAMEWORKS[frameworkName];
 
@@ -152,11 +159,45 @@ case "devsetup":
     break;
   }
 
-  // Clone Framework
-  console.log(`\nCloning ${frameworkName} framework...`);
+  // List all tags from framework repo
+  console.log(`\nListing ${frameworkName} framework tags...`);
+  const fwTagList = [];
+  const tagResult = await $`GIT_TERMINAL_PROMPT=0 git ls-remote --tags "http://${argv.credentials}@vsrnd.synology.me:3000/2rd_system/${frameworkName}.git"`;
+  const tagText = typeof tagResult.text === "function" ? await tagResult.text() : tagResult.text;
+  const tagOutput = String(tagText);
+  if (tagResult.exitCode === 0 && tagOutput.trim()) {
+    for (const line of tagOutput.trim().split("\n")) {
+      const parts = line.split("\t");
+      if (parts.length >= 2) {
+        const ref = parts[1];
+        if (ref.startsWith("refs/tags/")) {
+          const tagName = ref.replace("refs/tags/", "");
+          fwTagList.push(tagName);
+        }
+      }
+    }
+  }
+
+  let selectedTag = "HEAD";
+  if (fwTagList.length > 0) {
+    console.log(`\n   Available tags (${fwTagList.length}):`);
+    fwTagList.forEach((tag, i) => { console.log(`     ${i + 1}) ${tag}`); });
+    console.log(`     0) HEAD (latest)`);
+    const tagChoice = await ask(`   Select tag? (default: 0)`, "0");
+    const choiceIdx = parseInt(tagChoice) - 1;
+    if (choiceIdx >= 0 && choiceIdx < fwTagList.length) {
+      selectedTag = fwTagList[choiceIdx];
+    }
+  }
+
+  // Clone Framework at selected tag
+  console.log(`\nCloning ${frameworkName} framework at tag: ${selectedTag}...`);
   const fwTmp = join(build, `__${frameworkName}_fw_tmp`);
   await $`rm -rf ${fwTmp}`;
-  await gitClone(frameworkRepo, fwTmp);
+  await $`${{ raw: `GIT_TERMINAL_PROMPT=0 git clone "http://${argv.credentials}@vsrnd.synology.me:3000/2rd_system/${frameworkName}.git" "${fwTmp}"` }}`;
+  if (selectedTag !== "HEAD") {
+    await $`cd ${fwTmp} && git checkout tags/${selectedTag} -f`;
+  }
 
   // Setup Shared Directories
   console.log(`Setting up framework at ${devFramework}...`);
@@ -189,22 +230,74 @@ case "devsetup":
     const compTmp = join(build, `__${compName}_comp_tmp`);
     const compDest = join(devComponents, compName);
 
-    // Check if component repo exists in Gitea
-    console.log(`Checking if component "${compName}" exists in Gitea...`);
-    try {
-      await gitClone(`vsrnd.synology.me:3000/components/${compName}.git`, compTmp);
-      compExists = true;
-      console.log(`  Component "${compName}" exists — cloning into ${compDest}...`);
-    } catch (err) {
-      console.log(`  Component "${compName}" does NOT exist — creating from scratch...`);
-    }
+    // Check if component repo already exists locally
+    console.log(`Checking if component "${compName}" exists locally...`);
+    const localCompExists = await exists(compDest);
 
-    if (compExists) {
-      // EXISTING: clone and link
-      await $`rm -rf ${compDest}`;
-      await mkdir(compDest, { recursive: true });
-      await $`mv ${compTmp}/* ${compDest}/`;
-      await $`rm -rf ${compTmp}`;
+    if (localCompExists) {
+      // LOCAL EXISTS: use existing, just check tags
+      console.log(`  Component "${compName}" already exists at ${compDest}`);
+      compExists = true;
+
+      // Show current active tag
+      const currentTagResult = await $`cd ${compDest} && git describe --tags --exact-match 2>/dev/null`.catch(() => ({ exitCode: 1 }));
+      const currentTag = currentTagResult.exitCode === 0 ? (typeof currentTagResult.text === "function" ? await currentTagResult.text() : currentTagResult.text).trim() : "HEAD";
+      console.log(`  Active tag: ${currentTag}`);
+    } else {
+      // LOCAL DOES NOT EXIST: check Gitea, then clone
+      console.log(`  Component "${compName}" does NOT exist locally — checking Gitea...`);
+      const checkResult = await $`GIT_TERMINAL_PROMPT=0 git ls-remote "http://${argv.credentials}@vsrnd.synology.me:3000/components/${compName}.git" HEAD`;
+      const checkText = typeof checkResult.text === "function" ? await checkResult.text() : checkResult.text;
+      if (checkResult.exitCode === 0 && String(checkText).trim()) {
+        compExists = true;
+
+        // List tags for user to select
+        console.log(`  Listing ${compName} tags...`);
+        const compTagList = [];
+        const tagResult = await $`GIT_TERMINAL_PROMPT=0 git ls-remote --tags "http://${argv.credentials}@vsrnd.synology.me:3000/components/${compName}.git"`;
+        const tagText = typeof tagResult.text === "function" ? await tagResult.text() : tagResult.text;
+        const tagOutput = String(tagText);
+        if (tagResult.exitCode === 0 && tagOutput.trim()) {
+          for (const line of tagOutput.trim().split("\n")) {
+            const parts = line.split("\t");
+            if (parts.length >= 2) {
+              const ref = parts[1];
+              if (ref.startsWith("refs/tags/")) {
+                const tagName = ref.replace("refs/tags/", "");
+                compTagList.push(tagName);
+              }
+            }
+          }
+        }
+
+        let selectedTag = "HEAD";
+        if (compTagList.length > 0) {
+          console.log(`\n   Available tags (${compTagList.length}):`);
+          compTagList.forEach((tag, i) => { console.log(`     ${i + 1}) ${tag}`); });
+          console.log(`     0) HEAD (latest)`);
+          const tagChoice = await ask(`   Select tag? (default: 0)`, "0");
+          const choiceIdx = parseInt(tagChoice) - 1;
+          if (choiceIdx >= 0 && choiceIdx < compTagList.length) {
+            selectedTag = compTagList[choiceIdx];
+          }
+        }
+
+        console.log(`  Cloning ${compName} at tag: ${selectedTag}...`);
+        await $`rm -rf ${compTmp}`;
+        await $`${{ raw: `GIT_TERMINAL_PROMPT=0 git clone "http://${argv.credentials}@vsrnd.synology.me:3000/components/${compName}.git" "${compTmp}"` }}`;
+        if (selectedTag !== "HEAD") {
+          await $`cd ${compTmp} && git checkout tags/${selectedTag} -f`;
+        }
+
+        await $`rm -rf ${compDest}`;
+        await mkdir(compDest, { recursive: true });
+        await $`cp -a ${compTmp}/. ${compDest}/`;
+        await $`rm -rf ${compTmp}`;
+      } else {
+        compExists = false;
+        console.log(`  Component "${compName}" does NOT exist in Gitea — creating from scratch...`);
+      }
+    }
 
       // Merge component dependencies + resolve atomic modules
       const compPkgPath = join(compDest, "package.json");
@@ -222,13 +315,27 @@ case "devsetup":
           const typeEntries = Object.entries(typeReqs).filter(([name, ver]) => ver && ver !== "");
           
           for (const [itemName, itemVer] of typeEntries) {
-            console.log(`\nCloning ${atomicType}: ${itemName}@${itemVer}...`);
             const itemDest = join(devAtomic, atomicType, itemName);
             const itemTmp = join(build, `__${atomicType}_${itemName}_tmp`);
-            await $`rm -rf ${itemDest}`;
-            await mkdir(itemDest, { recursive: true });
-            await $`rm -rf ${itemTmp}`;
-            try {
+
+            // Check if already exists locally
+            const localExists = await exists(itemDest);
+            if (localExists) {
+              const currentTagResult = await $`cd ${itemDest} && git describe --tags --exact-match 2>/dev/null`.catch(() => ({ exitCode: 1 }));
+              const currentTag = currentTagResult.exitCode === 0 ? (typeof currentTagResult.text === "function" ? await currentTagResult.text() : currentTagResult.text).trim() : "HEAD";
+              console.log(`\n  ${atomicType}/${itemName}@${itemVer} already exists at ${itemDest} (active: ${currentTag})`);
+              // Read package.json for dependencies
+              const itemPkgPath = join(itemDest, "package.json");
+              if (await exists(itemPkgPath)) {
+                const itemPkg = JSON.parse(await readFile(itemPkgPath, "utf8"));
+                if (itemPkg.dependencies) Object.assign(compPkgDeps.dependencies, itemPkg.dependencies);
+                if (itemPkg.devDependencies) Object.assign(compPkgDeps.devDependencies, itemPkg.devDependencies);
+              }
+            } else {
+              console.log(`\nCloning ${atomicType}: ${itemName}@${itemVer}...`);
+              await mkdir(itemDest, { recursive: true });
+              await $`rm -rf ${itemTmp}`;
+
               // Determine clone URL based on atomic type
               let cloneUrl;
               if (atomicType === "atom") {
@@ -242,18 +349,23 @@ case "devsetup":
               } else if (atomicType === "page") {
                 cloneUrl = `vsrnd.synology.me:3000/page/${itemName}.git`;
               }
-              await gitClone(cloneUrl, itemTmp);
-              await $`mv ${itemTmp}/* ${itemDest}/`;
-              await $`rm -rf ${itemTmp}`;
 
-              const itemPkgPath = join(itemDest, "package.json");
-              if (await exists(itemPkgPath)) {
-                const itemPkg = JSON.parse(await readFile(itemPkgPath, "utf8"));
-                if (itemPkg.dependencies) Object.assign(compPkgDeps.dependencies, itemPkg.dependencies);
-                if (itemPkg.devDependencies) Object.assign(compPkgDeps.devDependencies, itemPkg.devDependencies);
+              // Clone full repo first, then checkout tag
+              const cloneResult = await $`GIT_TERMINAL_PROMPT=0 git clone "http://${argv.credentials}@${cloneUrl}" "${itemTmp}"`;
+              if (cloneResult.exitCode === 0) {
+                await $`cd ${itemTmp} && git checkout tags/${itemVer} -f`;
+                await $`cp -a ${itemTmp}/. ${itemDest}/`;
+                await $`rm -rf ${itemTmp}`;
+
+                const itemPkgPath = join(itemDest, "package.json");
+                if (await exists(itemPkgPath)) {
+                  const itemPkg = JSON.parse(await readFile(itemPkgPath, "utf8"));
+                  if (itemPkg.dependencies) Object.assign(compPkgDeps.dependencies, itemPkg.dependencies);
+                  if (itemPkg.devDependencies) Object.assign(compPkgDeps.devDependencies, itemPkg.devDependencies);
+                }
+              } else {
+                console.log(`  WARNING: Failed to clone ${atomicType}/${itemName}@${itemVer} — skipping`);
               }
-            } catch (err) {
-              console.log(`  WARNING: Failed to clone ${atomicType}/${itemName}@${itemVer} — skipping`);
             }
           }
         }
@@ -313,7 +425,6 @@ case "devsetup":
     await mkdir(join(devPrj, "components"), { recursive: true });
     await $`ln -sfn /opt/share/components/${compName} ${prjCompLink}`;
     console.log(`Symlink: ${prjCompLink} -> /opt/share/components/${compName}`);
-  }
 
   // Create Project Skeleton
   console.log(`Creating project skeleton at ${devPrj}...`);
@@ -365,7 +476,7 @@ case "devsetup":
 
   // Framework dependencies
   const rootPkg = JSON.parse(await readFile(join(fwTmp, "package.json"), "utf8"));
-  pkg.framework = { [frameworkName]: rootPkg.version };
+  pkg.framework = { [frameworkName]: selectedTag === "HEAD" ? rootPkg.version : selectedTag };
   if (rootPkg.dependencies) Object.assign(pkg.dependencies, rootPkg.dependencies);
   if (rootPkg.devDependencies) Object.assign(pkg.devDependencies, rootPkg.devDependencies);
 
@@ -435,8 +546,9 @@ case "devsetup":
     console.log(`  Component:  ${join(devComponents, compName)} (${compExists ? "existing repo" : "new skeleton"})`);
   }
   process.exit(0);
+  break;
 
-case "kill":
+  case "kill":
   if (!argv.port) { console.log("Cannot get port number from argument --port!"); }
   else {
     const portoccupied = async () => {
@@ -454,7 +566,7 @@ case "kill":
   console.log(`Kill done!`);
   break;
 
-case "install":
+  case "install":
   let lstpackage = await searchFiles(dir, "package.json");
   if (lstpackage.length > 0) {
     let pkg = { dependencies: {}, devDependencies: {}, name: basename(dir) };
@@ -477,6 +589,8 @@ case "install":
   console.log("Install done!");
   break;
 
-default:
-  console.log("--proc undefined!");
-}
+  default:
+    console.log(`Unknown proc: ${proc || "(none)"}`);
+    console.log(helpText);
+  }
+})();
