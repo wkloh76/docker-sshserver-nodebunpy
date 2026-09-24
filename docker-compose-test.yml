@@ -1,0 +1,35 @@
+#
+# volumes:
+#   home_data:
+
+services:
+  ssh_nodebunpy_test:
+    image: "${IMG}:${TAG}-${ARG1}-test"
+    container_name: ssh_nodebunpy_test
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Kuala_Lumpur
+      - SUDO_ACCESS=true
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=test1234
+      - USER_NAME=test
+      - LOG_STDOUT=
+    volumes:
+      - home_data:/home
+      - /test/share:/opt/share
+      - /test/data:/data
+      - /test/nodepath:/nodepath
+    working_dir: /opt/share
+    ports:
+      - 9800:2222
+      - 9820-9821:3000-3001
+    shm_size: "2gb"
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 2000M
+
+volumes:
+  home_data:

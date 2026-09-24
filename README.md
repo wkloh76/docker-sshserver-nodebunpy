@@ -104,7 +104,7 @@ docker buildx build \
 
 ## Helper (`install_module.js`)
 
-Compiled into `/usr/local/bin/helper` inside the container. Four operation modes:
+Compiled into `/usr/local/bin/helper` inside the container. Five operation modes:
 
 ### `kill` — Free a port
 
@@ -121,6 +121,22 @@ helper --proc=install --dir=/opt/share/prj/myapp
 ```
 
 > **Note:** `devsetup` already auto-runs `install` at the end. Only use `install` manually when you've edited `package.json` and need to refresh `node_modules`.
+
+### `recheck` — Fix broken symlinks + auto-install
+
+For existing projects where symlinks may be broken or `node_modules` is missing:
+
+```bash
+helper --proc=recheck --project=myapp
+```
+
+Checks and repairs:
+- All atomic symlinks (`atomic/atom/`, `atomic/molecule/`, etc.)
+- Component symlinks (`prj/myapp/components/`)
+- Relinks `node_modules` symlink if `/nodepath/<user>/<project>/node_modules` exists but symlink is broken
+- Rebuilds and relinks `node_modules` if `/nodepath/<user>/<project>/node_modules` is missing
+
+> **Note:** Use this after `docker exec` or when symlinks become stale.
 
 ### `devsetup` — Interactive development tree setup (Q&A)
 

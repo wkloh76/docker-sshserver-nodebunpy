@@ -37,18 +37,21 @@ Modes:
   --proc=kill         Free a port by PID
   --proc=install      Install dependencies (bun install + symlink node_modules)
   --proc=devsetup     Full dev tree setup (framework + atomic + component + install)
+  --proc=recheck      Recheck existing project (fix broken symlinks + install if needed)
+  --force             Force reinstall dependencies (used with "recheck")
 
 Options:
   --help, -h          Show this help message
-  --proc=<mode>       Required: "kill", "install", or "devsetup"
+  --proc=<mode>       Required: "kill", "install", "devsetup", or "recheck"
   --dir=<path>        Search directory for package.json files (default: "/opt/share")
   --target=<path>     Symlink node_modules to this directory (used with "install")
   --user=<user>       Username for path, or "disable" to skip user path (default: current user)
   --port=<number>     Port number to check/kill (used with "kill")
-  --project=<name>    Project name (used with "devsetup")
+  --project=<name>    Project name (used with "devsetup" or "recheck")
   --engine=<type>     webbunjs, webnodehonojs, appservicejs, deskelectronjs (default: webnodehonojs)
   --comp=<name>       Component name for devsetup (optional — new skeleton or existing repo)
   --credentials=<user:pass>  Gitea user:pass
+  --force             Force reinstall dependencies (used with "recheck", default: false)
 
 Examples:
   # Free a port
@@ -65,6 +68,12 @@ Examples:
 
   # Dev setup with existing component repo
   helper --proc=devsetup --project=myapp --comp=oqc --engine=webnodehonojs --credentials=user:pass
+
+  # Recheck existing project: fix broken symlinks + install if needed
+  helper --proc=recheck --project=myapp
+
+  # Force reinstall dependencies
+  helper --proc=recheck --project=myapp --force=true
 `;
 
 // Check for help flag
@@ -120,6 +129,10 @@ const gitClone = async (repoPath, dest) => {
   }
   argv.credentials = credentials;
 
+  // Step 1b: Framework default
+  let frameworkName = "oricommjs_v2";
+  let selectedTag = "HEAD";
+
   // Validate credentials
   console.log("Validating credentials...");
   const testClone = join(build, "__test_clone");
@@ -138,35 +151,114 @@ const gitClone = async (repoPath, dest) => {
     argv.credentials = credentials;
   } else { console.log("Credentials OK."); }
 
-  // Step 2: Project Directory Check
+  // Step 2: Project Directory Check — if exists, run recheck then exit
   if (await exists(devPrj)) {
     console.log(`Project directory already exists: ${devPrj}`);
-    break;
+    console.log(`Running recheck...`);
+    const _rd = "/opt/share";
+    const recheckPrj = devPrj;
+    const recheckDevAtomic = join(_rd, "atomic");
+    const recheckDevComponents = join(_rd, "components");
+    console.log(`\n=== Rechecking project: ${recheckPrj} ===`);
+    let symlinksFixed = 0;
+    const recheckAtomicTypes = ["atom", "molecule", "organism", "template", "page"];
+    for (const atomicType of recheckAtomicTypes) {
+      const prjAtomicTypeDir = join(recheckPrj, "atomic", atomicType);
+      if (!(await exists(prjAtomicTypeDir))) continue;
+      const entries = await readdir(prjAtomicTypeDir);
+      for (const name of entries) {
+        const linkPath = join(prjAtomicTypeDir, name);
+        try {
+          const stat = await $`stat -L ${linkPath}`.catch(() => ({ exitCode: 1 }));
+          if (stat.exitCode !== 0) {
+            let targetPath = "";
+            const compPkgPath = join(recheckDevComponents, argv.comp || "", "package.json");
+            if (await exists(compPkgPath)) {
+              const compPkg = JSON.parse(await readFile(compPkgPath, "utf8"));
+              const atomicReqs = compPkg.atomic || {};
+              if (atomicReqs[atomicType] && atomicReqs[atomicType][name]) {
+                targetPath = join(recheckDevAtomic, atomicType, name);
+              }
+            }
+            if (!targetPath || !(await exists(targetPath))) {
+              const compLinkPath = join(recheckPrj, "components", name);
+              if (await exists(compLinkPath).catch(() => false)) {
+                targetPath = join(recheckDevComponents, name);
+              }
+            }
+            if (targetPath && await exists(targetPath)) {
+              console.log(`  Fix symlink: ${linkPath} -> ${targetPath}`);
+              await $`ln -sfn ${targetPath} ${linkPath}`;
+              symlinksFixed++;
+            } else {
+              console.log(`  Broken symlink (cannot fix): ${linkPath}`);
+            }
+          }
+        } catch (e) {
+          try {
+            const lsResult = await $`readlink ${linkPath}`.catch(() => ({ text: "" }));
+            const target = typeof lsResult.text === "function" ? (await lsResult.text()).trim() : String(lsResult.text || "").trim();
+            if (target && !await exists(target)) {
+              console.log(`  Broken symlink: ${linkPath} -> ${target} (target missing)`);
+            }
+          } catch (e2) {}
+        }
+      }
+    }
+    const prjCompDir = join(recheckPrj, "components");
+    if (await exists(prjCompDir)) {
+      const compEntries = await readdir(prjCompDir);
+      for (const name of compEntries) {
+        const linkPath = join(prjCompDir, name);
+        try {
+          const target = (await $`readlink ${linkPath}`.catch(() => ({ text: "" }))).text;
+          const targetStr = typeof target === "function" ? (await target()).trim() : String(target || "").trim();
+          if (!await exists(targetStr)) {
+            console.log(`  Broken component symlink: ${linkPath} -> ${targetStr}`);
+          }
+        } catch (e) {}
+      }
+    }
+    if (symlinksFixed > 0) {
+      console.log(`  Total symlinks fixed: ${symlinksFixed}`);
+    } else {
+      console.log("  All symlinks OK.");
+    }
+    const nodeModulesPath = join(recheckPrj, "node_modules");
+    if (await exists(nodeModulesPath)) {
+      console.log(`  node_modules exists — no install needed.`);
+    } else {
+      console.log(`  node_modules missing — running auto-install...`);
+      await $`helper --proc=install --dir=${recheckPrj} --target=${recheckPrj}`;
+    }
+    console.log(`\n=== Recheck complete ===`);
+    console.log(`  Project:  ${recheckPrj}`);
+    console.log(`  Symlinks fixed: ${symlinksFixed}`);
+    process.exit(0);
   }
   await mkdir(devPrj, { recursive: true });
   await mkdir(devComponents, { recursive: true });
   await mkdir(devAtomic, { recursive: true });
   await mkdir(devFramework, { recursive: true });
+  // Fix ownership — devsetup runs as root but project files belong to current user
+  try { await $`${{ raw: `chown -R $(id -u):$(id -g) ${devPrj}` }}`; } catch (e) {}
 
-  // Step 3: Framework (always oricommjs_v2) — list tags for user to select
-  const frameworkName = "oricommjs_v2";
+  // Step 3: Framework — default oricommjs_v2, list tags for user to select
   const frameworkRepo = FRAMEWORKS[frameworkName];
-
-  // Step 4: Engine Selection (default webnodehonojs, no prompt)
   let engine = argv.engine || "webnodehonojs";
   if (!validEngines.includes(engine)) {
     console.log(`Invalid engine: ${engine}. Valid: ${validEngines.join(", ")}`);
     break;
   }
 
-  // List all tags from framework repo
+  // List framework tags for user to select
   console.log(`\nListing ${frameworkName} framework tags...`);
   const fwTagList = [];
-  const tagResult = await $`GIT_TERMINAL_PROMPT=0 git ls-remote --tags "http://${argv.credentials}@vsrnd.synology.me:3000/2rd_system/${frameworkName}.git"`;
-  const tagText = typeof tagResult.text === "function" ? await tagResult.text() : tagResult.text;
-  const tagOutput = String(tagText);
-  if (tagResult.exitCode === 0 && tagOutput.trim()) {
-    for (const line of tagOutput.trim().split("\n")) {
+  const fwTagResult = await $`GIT_TERMINAL_PROMPT=0 git ls-remote --tags "http://${argv.credentials}@vsrnd.synology.me:3000/2rd_system/${frameworkName}.git"`;
+  const fwTagText = typeof fwTagResult.text === "function" ? await fwTagResult.text() : fwTagResult.text;
+  const fwTagOutput = String(fwTagText);
+  if (fwTagResult.exitCode === 0 && fwTagOutput.trim()) {
+    for (const line of fwTagOutput.trim().split("\n")) {
       const parts = line.split("\t");
       if (parts.length >= 2) {
         const ref = parts[1];
@@ -178,15 +270,15 @@ const gitClone = async (repoPath, dest) => {
     }
   }
 
-  let selectedTag = "HEAD";
+  selectedTag = "HEAD";
   if (fwTagList.length > 0) {
     console.log(`\n   Available tags (${fwTagList.length}):`);
     fwTagList.forEach((tag, i) => { console.log(`     ${i + 1}) ${tag}`); });
     console.log(`     0) HEAD (latest)`);
-    const tagChoice = await ask(`   Select tag? (default: 0)`, "0");
-    const choiceIdx = parseInt(tagChoice) - 1;
-    if (choiceIdx >= 0 && choiceIdx < fwTagList.length) {
-      selectedTag = fwTagList[choiceIdx];
+    const fwTagChoice = await ask(`   Select tag? (default: 0)`, "0");
+    const fwChoiceIdx = parseInt(fwTagChoice) - 1;
+    if (fwChoiceIdx >= 0 && fwChoiceIdx < fwTagList.length) {
+      selectedTag = fwTagList[fwChoiceIdx];
     }
   }
 
@@ -566,6 +658,125 @@ const gitClone = async (repoPath, dest) => {
   console.log(`Kill done!`);
   break;
 
+  case "recheck":
+    const _rd2 = "/opt/share";
+    const recheckPrj2 = join(_rd2, "prj", argv.project);
+    const recheckDevAtomic2 = join(_rd2, "atomic");
+    const recheckDevComponents2 = join(_rd2, "components");
+    const forceInstall = argv.force === "true";
+  if (!(await exists(recheckPrj2))) {
+    console.log(`Project directory does not exist: ${recheckPrj2}`);
+    break;
+  }
+  console.log(`\n=== Rechecking project: ${recheckPrj2} ===`);
+
+  // Fix all broken symlinks and convert real directories to symlinks
+  let symlinksFixed = 0;
+  const recheckAtomicTypes = ["atom", "molecule", "organism", "template", "page"];
+  for (const atomicType of recheckAtomicTypes) {
+    const prjAtomicTypeDir = join(recheckPrj2, "atomic", atomicType);
+    if (!(await exists(prjAtomicTypeDir))) continue;
+    const entries = await readdir(prjAtomicTypeDir);
+    for (const name of entries) {
+      // Skip README.md and other non-directory files
+      if (name === "README.md") continue;
+      const linkPath = join(prjAtomicTypeDir, name);
+      const targetPath = join(recheckDevAtomic2, atomicType, name);
+
+      // Check if it's a symlink
+      const isLink = await $`test -L ${linkPath}`.catch(() => ({ exitCode: 1 }));
+      if (isLink.exitCode === 0) {
+        // It's a symlink — check if broken
+        const stat = await $`stat -L ${linkPath}`.catch(() => ({ exitCode: 1 }));
+        if (stat.exitCode !== 0) {
+          // Broken symlink — try to reconnect
+          if (await exists(targetPath)) {
+            console.log(`  Fix symlink: ${linkPath} -> ${targetPath}`);
+            await $`ln -sfn ${targetPath} ${linkPath}`;
+            symlinksFixed++;
+          } else {
+            console.log(`  Broken symlink (cannot fix): ${linkPath}`);
+          }
+        }
+      } else {
+        // Not a symlink — check if target exists in /opt/share/atomic
+        if (await exists(targetPath)) {
+          console.log(`  Convert to symlink: ${linkPath} -> ${targetPath}`);
+          await $`rm -rf ${linkPath}`;
+          await $`ln -sfn ${targetPath} ${linkPath}`;
+          symlinksFixed++;
+        }
+      }
+    }
+  }
+
+  // Fix component symlinks
+  const prjCompDir = join(recheckPrj2, "components");
+  if (await exists(prjCompDir)) {
+    const compEntries = await readdir(prjCompDir);
+    for (const name of compEntries) {
+      const linkPath = join(prjCompDir, name);
+      try {
+        const isLink = await $`test -L ${linkPath}`.catch(() => ({ exitCode: 1 }));
+        if (isLink.exitCode !== 0) continue; // skip regular files
+        const target = (await $`readlink ${linkPath}`.catch(() => ({ text: "" }))).text;
+        const targetStr = typeof target === "function" ? (await target()).trim() : String(target || "").trim();
+        if (targetStr && !await exists(targetStr)) {
+          console.log(`  Broken component symlink: ${linkPath} -> ${targetStr}`);
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (symlinksFixed > 0) {
+    console.log(`  Total symlinks fixed: ${symlinksFixed}`);
+  } else {
+    console.log("  All symlinks OK.");
+  }
+
+  // Check node_modules
+  const nodeModulesPath = join(recheckPrj2, "node_modules");
+  const nodePathModules = `/nodepath${whoami}/${basename(recheckPrj2)}/node_modules`;
+  if (forceInstall) {
+    console.log(`  Force reinstall — running auto-install...`);
+    try {
+      await $`helper --proc=install --dir=${recheckPrj2} --target=${recheckPrj2}`;
+    } catch (e) {
+      // Fix ownership and retry
+      try { await $`${{ raw: `chown -R $(id -u):$(id -g) ${recheckPrj2}` }}`; } catch (e2) {}
+      await $`helper --proc=install --dir=${recheckPrj2} --target=${recheckPrj2}`;
+    }
+  } else if (await exists(nodePathModules)) {
+    // Target exists — just relink
+    console.log(`  /nodepath/node_modules exists — relinking...`);
+    try {
+      await $`rm -f ${nodeModulesPath}`;
+      await $`ln -sfn ${nodePathModules} ${nodeModulesPath}`;
+    } catch (e) {
+      try { await $`${{ raw: `chown -R $(id -u):$(id -g) ${recheckPrj2}` }}`; } catch (e2) {}
+      try {
+        await $`rm -f ${nodeModulesPath}`;
+        await $`ln -sfn ${nodePathModules} ${nodeModulesPath}`;
+      } catch (e3) {}
+    }
+  } else {
+    // Target missing — need to rebuild then relink
+    console.log(`  /nodepath/node_modules missing — running auto-install...`);
+    try {
+      await $`helper --proc=install --dir=${recheckPrj2} --target=${recheckPrj2}`;
+    } catch (e) {
+      // Fix ownership and retry
+      try { await $`${{ raw: `chown -R $(id -u):$(id -g) ${recheckPrj2}` }}`; } catch (e2) {}
+      await $`helper --proc=install --dir=${recheckPrj2} --target=${recheckPrj2}`;
+    }
+  }
+
+  console.log(`\n=== Recheck complete ===`);
+  console.log(`  Project:  ${recheckPrj2}`);
+  console.log(`  Symlinks fixed: ${symlinksFixed}`);
+  process.exit(0);
+  break;
+
   case "install":
   let lstpackage = await searchFiles(dir, "package.json");
   if (lstpackage.length > 0) {
@@ -577,15 +788,21 @@ const gitClone = async (repoPath, dest) => {
     }
     await writeFile(`${build}/package.json`, JSON.stringify(pkg));
     await $`${{ raw: "bun install --linker hoisted --no-save --no-lockfile" }}`.cwd(build);
-    if (whoami != "") await $`${{ raw: `mkdir -p /nodepath${whoami}/${basename(dir)}` }}`;
-    if (await exists(`/nodepath${whoami}/${basename(dir)}/node_modules`))
-      await $`${{ raw: `rm -r /nodepath${whoami}/${basename(dir)}` }}`;
-    await $`${{ raw: `cp -r node_modules /nodepath${whoami}/${basename(dir)}/node_modules` }}`.cwd(build);
+    if (whoami != "") {
+      await $`${{ raw: `mkdir -p /nodepath${whoami}/${basename(dir)}` }}`;
+      if (await exists(`/nodepath${whoami}/${basename(dir)}/node_modules`))
+        await $`${{ raw: `rm -rf /nodepath${whoami}/${basename(dir)}/node_modules` }}`;
+      await $`${{ raw: `cp -r node_modules /nodepath${whoami}/${basename(dir)}/node_modules` }}`.cwd(build);
+    }
   }
   if (target) {
-    await $`${{ raw: `ln -sfn  /nodepath${whoami}/${basename(dir)}/node_modules ${target}/node_modules` }}`;
+    try { await $`${{ raw: `ln -sfn  /nodepath${whoami}/${basename(dir)}/node_modules ${target}/node_modules` }}`; } catch (e) {
+      // Permission denied — target dir may be owned by another user; fix ownership and retry
+      try { await $`${{ raw: `chown -R $(id -u):$(id -g) ${target}` }}`; } catch (e2) {}
+      try { await $`${{ raw: `ln -sfn  /nodepath${whoami}/${basename(dir)}/node_modules ${target}/node_modules` }}`; } catch (e3) {}
+    }
   }
-  await $`${{ raw: "rm -r node_modules package.json" }}`.cwd(build);
+  try { await $`${{ raw: "rm -r node_modules package.json" }}`.cwd(build); } catch (e) {}
   console.log("Install done!");
   break;
 
